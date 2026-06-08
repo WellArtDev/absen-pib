@@ -1,0 +1,14 @@
+{
+  "name": "absen-pib/backend",
+  "description": "AbsenPIB REST API - PHP Native",
+  "type": "project",
+  "require": {
+    "php": ">=8.1",
+    "vlucas/phpdotenv": "^5.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "src/"
+    }
+  }
+}
