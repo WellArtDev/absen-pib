@@ -1,12 +1,12 @@
 <?php
 /**
  * AbsenPIB public/index.php
- * Manual requires — no composer PSR-4 needed. Works on cPanel.
+ * No composer PSR-4 needed. All manual requires.
  */
-define('ABSPATH', dirname(__DIR__));
+define('ROOT', dirname(__DIR__));
 
-// ─── Manual autoload ALL source files ──────────────
-$SRC = ABSPATH . '/src';
+// ─── Manual autoload ──────────────────────────────
+$SRC = ROOT . '/src';
 require_once $SRC . '/Database.php';
 require_once $SRC . '/Response.php';
 require_once $SRC . '/Auth.php';
@@ -27,19 +27,15 @@ require_once $SRC . '/controllers/OfficeController.php';
 require_once $SRC . '/controllers/ReportController.php';
 require_once $SRC . '/controllers/NotificationController.php';
 
-// Vendor (dotenv only)
-$vendor = ABSPATH . '/vendor/autoload.php';
-if (file_exists($vendor)) require_once $vendor;
-
-// Load .env manually (fallback if dotenv fails)
-if (file_exists(ABSPATH . '/.env')) {
-    foreach (file(ABSPATH . '/.env') as $line) {
+// .env
+$envFile = ROOT . '/.env';
+if (file_exists($envFile)) {
+    foreach (file($envFile) as $line) {
         $line = trim($line);
         if ($line && !str_starts_with($line, '#') && str_contains($line, '=')) {
             [$k, $v] = explode('=', $line, 2);
-            $val = trim($v);
-            $_ENV[trim($k)] = $val;
-            putenv(trim($k) . '=' . $val);
+            $_ENV[trim($k)] = trim($v);
+            putenv(trim($k) . '=' . trim($v));
         }
     }
 }
@@ -55,48 +51,34 @@ set_exception_handler(function (\Throwable $e) {
 
 // ─── Parse request ─────────────────────────────────
 $method = $_SERVER['REQUEST_METHOD'];
-$uri = strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
+$rawUri = $_SERVER['REQUEST_URI'] ?? '/';
+$uri = strtok($rawUri, '?');
 $path = '/' . trim($uri, '/');
 $body = json_decode(file_get_contents('php://input'), true) ?? [];
 $query = $_GET;
 
-// ─── Root → login page ─────────────────────────────
+// ─── Root → dashboard login page ───────────────────
 if ($path === '/') {
-    header('Content-Type: text/html; charset=utf-8');
-    require __DIR__ . '/dashboard/index.php';
+    serveDashboard('index.php');
     exit;
 }
 
 // ─── Dashboard HTML pages ──────────────────────────
 if (str_starts_with($path, '/dashboard')) {
     if ($path === '/dashboard') { header('Location: /dashboard/'); exit; }
-    $seg = basename($path) ?: 'index.php';
-    $file = __DIR__ . '/dashboard/' . $seg;
-    if (is_file($file) && pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-        header('Content-Type: text/html; charset=utf-8');
-        require $file;
-        exit;
-    }
-    header('Content-Type: text/html; charset=utf-8');
-    require __DIR__ . '/dashboard/index.php';
+    $seg = ltrim(substr($path, 10), '/') ?: 'index.php';
+    serveDashboard($seg);
     exit;
 }
 
 // ─── API: /api prefix required ─────────────────────
 if (!str_starts_with($path, '/api/')) {
-    header('Content-Type: application/json; charset=utf-8');
-    http_response_code(404);
-    echo json_encode([
-        'success' => false,
-        'error' => 'Not found.',
-        'docs' => ['api' => '/api/auth/login', 'dashboard' => '/dashboard/']
-    ]);
-    exit;
+    jsonResponse(404, ['success' => false, 'error' => 'Not found. Use /api/auth/login, /api/attendance/check-in, etc.']);
 }
 
 $apiPath = '/' . trim(substr($path, 4), '/') ?: '/';
 
-// ─── JSON API response ─────────────────────────────
+// ─── JSON API ──────────────────────────────────────
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -107,3 +89,20 @@ if ($method === 'OPTIONS') { http_response_code(200); exit; }
 $router = new App\Router();
 require_once $SRC . '/routes.php';
 $router->dispatch($method, $apiPath, $body, $query);
+
+// ─── Helper functions ──────────────────────────────
+function serveDashboard(string $file): void {
+    $f = __DIR__ . '/dashboard/' . basename($file);
+    if (!is_file($f) || pathinfo($f, PATHINFO_EXTENSION) !== 'php') {
+        $f = __DIR__ . '/dashboard/index.php';
+    }
+    header('Content-Type: text/html; charset=utf-8');
+    require $f;
+}
+
+function jsonResponse(int $code, array $data): void {
+    header('Content-Type: application/json; charset=utf-8');
+    http_response_code($code);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    exit;
+}
